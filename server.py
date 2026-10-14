@@ -2,9 +2,55 @@ import os
 import subprocess
 import psutil
 from fastmcp import FastMCP
+import base64, os, requests
+import io
+import mss
+from PIL import Image
+from dotenv import load_dotenv
+load_dotenv()
 
-# Initialize the MCP Server
-mcp = FastMCP("Alexa Laptop Productivity Hub")
+mcp = FastMCP("laptop-assistant")
+
+
+def _grab_screen_png(max_side: int = 1600) -> bytes:
+    """Capture the primary monitor and shrink it (cheaper and faster for the model)."""
+    with mss.mss() as sct:
+        shot = sct.grab(sct.monitors[1])
+    img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+    img.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _ask_vision_model(png: bytes, question: str) -> str:
+    b64 = base64.b64encode(png).decode()
+    model = "gemini-2.5-flash"  # or any vision-capable Gemini model in your AI Studio
+    r = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        headers={"x-goog-api-key": os.environ["GOOGLE_API_KEY"]},
+        json={
+            "contents": [{"parts": [
+                {"text": question},
+                {"inline_data": {"mime_type": "image/png", "data": b64}},
+            ]}],
+            "generationConfig": {"maxOutputTokens": 2000},
+        },
+        timeout=60,
+    )
+    if not r.ok:
+        raise RuntimeError(f"{r.status_code}: {r.text}")
+    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+@mcp.tool()
+def ask_about_screen(question: str) -> str:
+    """Look at the user's laptop screen right now and answer a question about it.
+    Use when the user asks about something visible on screen, such as an error
+    message, a chart, a page they are reading, or what app is open."""
+    png = _grab_screen_png()
+    return _ask_vision_model(png, question)
+
 
 @mcp.tool
 def get_system_status() -> str:
@@ -42,5 +88,4 @@ def run_git_status(repo_path: str = ".") -> str:
         return f"Failed to run git status: {str(e)}"
 
 if __name__ == "__main__":
-    print("Starting Alexa+ MCP Server on http://127.0.0.1:8000/sse")
-    mcp.run(transport="http", host="127.0.0.1", port=8000)
+    mcp.run(transport="streamable-http")  # serves at http://127.0.0.1:8000/mcp
