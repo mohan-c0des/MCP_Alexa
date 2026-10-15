@@ -87,5 +87,8 @@ def run_git_status(repo_path: str = ".") -> str:
     except Exception as e:
         return f"Failed to run git status: {str(e)}"
 
+from analyze_data import analyze_data
+mcp.tool()(analyze_data)
+
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")  # serves at http://127.0.0.1:8000/mcp
