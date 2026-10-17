@@ -6,11 +6,15 @@ import base64, os, requests
 import io
 import mss
 from PIL import Image
+from instructions import SERVER_INSTRUCTIONS
+from research_topic import research_topic
 from dotenv import load_dotenv
 load_dotenv()
 
-mcp = FastMCP("laptop-assistant")
 
+mcp = FastMCP("laptop-assistant", instructions=SERVER_INSTRUCTIONS)
+
+mcp.tool()(research_topic)
 
 def _grab_screen_png(max_side: int = 1600) -> bytes:
     """Capture the primary monitor and shrink it (cheaper and faster for the model)."""

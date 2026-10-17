@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from pdf_utils import md_to_pdf
+
 # --- Config ------------------------------------------------------------------
 WORKSPACE = Path(os.environ.get("MCP_WORKSPACE", Path.home() / "AlexaWorkspace")).resolve()
 REPORTS = WORKSPACE / "reports"
@@ -42,17 +44,25 @@ _TARGET_HINT = re.compile(
 INSTRUCTIONS = """You are a senior data analyst. Analyze the EVIDENCE and answer the USER REQUEST.
 
 Rules:
-- Use ONLY numbers that appear in the EVIDENCE. Never invent or recompute figures. If something
-  is not in the evidence, say it cannot be determined.
-- Separate facts (observed in the data) from interpretation (hypotheses). Label hypotheses clearly.
-- Correlation is not causation. Say so when you discuss drivers.
-- Flag data-quality issues (missing values, duplicates, outliers, small samples) that could change
-  the conclusions.
-- Be specific: every finding should cite the number that supports it.
+- Use ONLY numbers that appear in the EVIDENCE or SUPPORTING CONTEXT. Never invent or recompute
+  figures. If something is not there, say it cannot be determined.
+- Separate facts (observed) from interpretation (hypotheses). Label hypotheses clearly.
+  Correlation is not causation.
+- A trend is real only if its trend_strength is "moderate" or "strong" AND it has at least 6
+  periods. If it is "weak/noisy", call it noise or flat even when the first-to-last change looks
+  large. Periods listed under partial_periods_excluded were left out on purpose.
+- Confidence may be "high" only if there are at least 30 rows, the conclusions rest on strong
+  signals, and the data is not just web snippets. Web search notes or text read off a screen are
+  "medium" at best.
+- Flag data-quality issues (missing values, duplicates, outliers, small samples).
+- Be specific: every finding cites the number that supports it.
+- Finance, health and legal questions: compare the options by evidence and relative risk. Do not
+  tell the user to buy, sell, or take a treatment. Include one short sentence saying this is
+  information, not professional advice.
 
 Return ONLY a JSON object with these keys:
 {
-  "spoken_summary": "max 3 short sentences, plain speech, no markdown or symbols, include the single most important number",
+  "spoken_summary": "4 to 5 short sentences, plain speech, no markdown or symbols, with the most important numbers",
   "headline": "one-line takeaway",
   "key_findings": [{"finding": "...", "evidence": "..."}],
   "patterns_and_trends": [{"pattern": "...", "evidence": "..."}],
@@ -128,7 +138,9 @@ def _round(x, n: int = 4):
 
 
 def _d(ts) -> str:
-    """Timestamp -> 'YYYY-MM-DD' (keeps type checkers happy)."""
+    """Timestamp or Period -> 'YYYY-MM-DD' (keeps type checkers happy)."""
+    if isinstance(ts, pd.Period):
+        ts = ts.start_time
     return str(pd.Timestamp(ts).date())
 
 
@@ -165,24 +177,52 @@ def _pick_target(num_cols: list, focus: str):
 
 
 def _trend(s: pd.Series):
+    """Trend facts for one series: first/last, peak/trough, and how well a straight line fits."""
     if len(s) < 3:
         return None
-    first, last = float(s.iloc[0]), float(s.iloc[-1])
-    slope = float(np.polyfit(np.arange(len(s)), s.to_numpy(dtype=float), 1)[0])
-    scale = abs(float(s.mean())) or 1.0
-    if abs(slope) * len(s) < 0.02 * scale:
+    y = s.to_numpy(dtype=float)
+    x = np.arange(len(y), dtype=float)
+    slope, intercept = np.polyfit(x, y, 1)
+    ss_res = float(((y - (slope * x + intercept)) ** 2).sum())
+    ss_tot = float(((y - y.mean()) ** 2).sum())
+    r2 = 1 - ss_res / ss_tot if ss_tot else 0.0
+    scale = abs(float(y.mean())) or 1.0
+    strength = "strong" if r2 >= 0.6 else ("moderate" if r2 >= 0.3 else "weak/noisy")
+    if abs(slope) * len(y) < 0.02 * scale:
         direction = "flat"
     else:
         direction = "up" if slope > 0 else "down"
+    first, last = float(y[0]), float(y[-1])
     return {
-        "periods": int(len(s)),
+        "periods": int(len(y)),
         "first": {"period": _d(s.index[0]), "value": _round(first, 2)},
         "last": {"period": _d(s.index[-1]), "value": _round(last, 2)},
         "pct_change_first_to_last": _round((last - first) / abs(first) * 100, 1) if first else None,
-        "peak": {"period": _d(s.idxmax()), "value": _round(s.max(), 2)},
-        "trough": {"period": _d(s.idxmin()), "value": _round(s.min(), 2)},
+        "peak": {"period": _d(s.idxmax()), "value": _round(y.max(), 2)},
+        "trough": {"period": _d(s.idxmin()), "value": _round(y.min(), 2)},
         "direction": direction,
+        "trend_fit_r2": _round(r2, 2),
+        "trend_strength": strength,
+        "avg_change_per_period_pct": _round(slope / scale * 100, 2),
     }
+
+
+def _partial_periods(dates: pd.Series, level: str, periods) -> list:
+    """First/last periods that the data only partly covers (they would distort a trend)."""
+    ps = sorted(periods)
+    if level == "D" or len(ps) < 3:
+        return []
+    lo, hi = dates.min().normalize(), dates.max().normalize()
+
+    def length(p):
+        return (p.end_time.normalize() - p.start_time.normalize()).days + 1
+
+    out = []
+    if ((ps[0].end_time.normalize() - lo).days + 1) / length(ps[0]) < 0.85:
+        out.append(ps[0])
+    if ((hi - ps[-1].start_time.normalize()).days + 1) / length(ps[-1]) < 0.85:
+        out.append(ps[-1])
+    return out
 
 
 def _profile(df: pd.DataFrame, focus: str = "") -> dict:
@@ -255,14 +295,18 @@ def _profile(df: pd.DataFrame, focus: str = "") -> dict:
         d = df.dropna(subset=[dc]).sort_values(dc)
         if len(d) >= 4:
             span_days = (d[dc].max() - d[dc].min()).days
-            freq = "MS" if span_days > 120 else ("W" if span_days > 21 else "D")
+            level = "M" if span_days > 120 else ("W" if span_days > 21 else "D")
+            d = d.assign(_p=d[dc].dt.to_period(level))
+            dropped = _partial_periods(d[dc], level, d["_p"].unique())
             ev["time_column"] = str(dc)
-            ev["time_granularity"] = {"MS": "monthly", "W": "weekly", "D": "daily"}[freq]
+            ev["time_granularity"] = {"M": "monthly", "W": "weekly", "D": "daily"}[level]
+            if dropped:
+                ev["partial_periods_excluded"] = [str(p) for p in dropped]
             trends = {}
             for c in num_cols[:3]:
-                series = d.set_index(dc)[c]
-                t_sum = _trend(series.resample(freq).sum(min_count=1).dropna())
-                t_mean = _trend(series.resample(freq).mean().dropna())
+                grouped = d.groupby("_p")[c]
+                t_sum = _trend(grouped.sum(min_count=1).dropna().drop(dropped, errors="ignore"))
+                t_mean = _trend(grouped.mean().dropna().drop(dropped, errors="ignore"))
                 if t_sum or t_mean:
                     trends[str(c)] = {"per_period_total": t_sum, "per_period_average": t_mean}
             if trends:
@@ -375,16 +419,16 @@ def _render(rep: dict) -> str:
 
 
 # ----------------------------- the MCP tool ----------------------------------
-def analyze_data(source: str, question: str = "", focus_column: str = "") -> dict:
-    """Analyze data deeply and explain what matters. Use for ANY analysis request:
-    a spreadsheet or CSV file, numbers read off the screen, or researched text such as
-    market news. `source` is either a file name inside the workspace folder (for example
-    'sales.csv') or the raw data/text itself (for example text returned by ask_about_screen
-    or research_topic). Real statistics are computed in code first, then interpreted, so
-    the figures are reliable. `question` is what the user wants to know. `focus_column`
-    optionally names the main metric column. Returns a short spoken_summary (read this
-    aloud), a full report_markdown, and report_path (a saved .md file that a PDF tool can
-    turn into a document)."""
+def analyze_data(source: str, question: str = "", focus_column: str = "", context: str = "") -> dict:
+    """Analyze data deeply and explain what matters. Use for ANY analysis request on data you
+    already have: a spreadsheet or CSV file, numbers read off the screen, or pasted text.
+    `source` is either a file name inside the workspace folder (for example 'sales.csv') or the
+    raw data/text itself (for example text returned by ask_about_screen). To look things up on
+    the web, call research_topic instead; it runs this tool itself. Real statistics are computed
+    in code first, then interpreted, so the figures are reliable. `question` is what the user
+    wants to know. `focus_column` optionally names the main metric column. `context` is optional
+    extra notes. Returns spoken_summary (4-5 sentences to read aloud), report_pdf_path (the saved
+    PDF report), report_path (the same report as .md) and report_markdown."""
     df, text, origin = _resolve_source(source)
 
     if df is not None:
@@ -394,19 +438,26 @@ def analyze_data(source: str, question: str = "", focus_column: str = "") -> dic
         evidence = text
         kind = ("TEXT INPUT (no computed statistics available; quote figures exactly as written "
                 "and say when something cannot be verified)")
+    ctx = ""
+    if context.strip():
+        ctx = ("\n\nSUPPORTING CONTEXT (web research notes; unverified, cite them as such):\n"
+               + context[:MAX_TEXT_CHARS])
 
     request = question.strip() or "Analyze this thoroughly and explain what matters most."
-    prompt = f"{INSTRUCTIONS}\n\nUSER REQUEST: {request}\n\nSOURCE: {origin}\n\n{kind}:\n{evidence}"
+    prompt = f"{INSTRUCTIONS}\n\nUSER REQUEST: {request}\n\nSOURCE: {origin}\n\n{kind}:\n{evidence}{ctx}"
 
     report = _gemini_json(prompt)
     markdown = _render(report)
-    path = REPORTS / f"analysis_{datetime.now():%Y%m%d_%H%M%S}.md"
-    path.write_text(markdown, encoding="utf-8")
+    stamp = f"{datetime.now():%Y%m%d_%H%M%S}"
+    md_path = REPORTS / f"analysis_{stamp}.md"
+    md_path.write_text(markdown, encoding="utf-8")
+    pdf_path = md_to_pdf(markdown, md_path.with_suffix(".pdf"), title=report.get("headline", "Analysis"))
 
     return {
         "spoken_summary": report.get("spoken_summary", ""),
         "headline": report.get("headline", ""),
         "confidence": report.get("confidence", ""),
-        "report_path": str(path),
+        "report_pdf_path": str(pdf_path),
+        "report_path": str(md_path),
         "report_markdown": markdown,
     }
