@@ -6,8 +6,12 @@ import base64, os, requests
 import io
 import mss
 from PIL import Image
+
 from instructions import SERVER_INSTRUCTIONS
 from research_topic import research_topic
+from analyze_data import analyze_data
+from script_writer import write_script, run_script
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -15,6 +19,10 @@ load_dotenv()
 mcp = FastMCP("laptop-assistant", instructions=SERVER_INSTRUCTIONS)
 
 mcp.tool()(research_topic)
+mcp.tool()(analyze_data)
+
+mcp.tool()(write_script)
+mcp.tool()(run_script)
 
 def _grab_screen_png(max_side: int = 1600) -> bytes:
     """Capture the primary monitor and shrink it (cheaper and faster for the model)."""
@@ -90,9 +98,6 @@ def run_git_status(repo_path: str = ".") -> str:
         return result.stdout
     except Exception as e:
         return f"Failed to run git status: {str(e)}"
-
-from analyze_data import analyze_data
-mcp.tool()(analyze_data)
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")  # serves at http://127.0.0.1:8000/mcp

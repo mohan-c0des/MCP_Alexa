@@ -365,26 +365,36 @@ def _evidence_json(ev: dict) -> str:
 
 
 # ----------------------------- LLM -------------------------------------------
-def _gemini_json(prompt: str) -> dict:
+def _gemini_text(prompt: str, json_mode: bool = False, max_tokens: int = 12000) -> str:
+    """One Gemini call that returns plain text (or JSON text when json_mode is on)."""
+    config = {"temperature": 0.2, "maxOutputTokens": max_tokens}
+    if json_mode:
+        config["responseMimeType"] = "application/json"
     r = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
         headers={"x-goog-api-key": os.environ["GOOGLE_API_KEY"]},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.2,
-                "maxOutputTokens": 8192,
-            },
-        },
-        timeout=90,
+        json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config},
+        timeout=120,
     )
     if not r.ok:
         raise RuntimeError(f"Gemini {r.status_code}: {r.text}")
-    parts = r.json()["candidates"][0]["content"]["parts"]
-    text = "".join(p.get("text", "") for p in parts).strip()
-    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
-    return json.loads(text)
+    cand = r.json()["candidates"][0]
+    text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", [])).strip()
+    if not text:
+        raise RuntimeError(f"Gemini returned no text (finishReason={cand.get('finishReason')})")
+    return text
+
+
+def _gemini_json(prompt: str) -> dict:
+    """Ask Gemini for JSON; retry once if the reply is cut off or malformed."""
+    last: Exception | None = None
+    for _ in range(2):
+        text = re.sub(r"^```(?:json)?|```$", "", _gemini_text(prompt, json_mode=True), flags=re.M).strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            last = e
+    raise RuntimeError(f"Gemini returned invalid JSON twice: {last}")
 
 
 def _fmt(item) -> str:
