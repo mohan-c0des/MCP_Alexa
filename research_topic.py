@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 from ddgs import DDGS
@@ -74,7 +75,7 @@ def _plan(question: str) -> tuple[str, list[dict]]:
     return plan.get("goal") or question, queries
 
 
-def _run_search(ddgs: DDGS, q: dict) -> tuple[list[dict], str]:
+def _run_search(ddgs: Any, q: dict) -> tuple[list[dict], str]:
     """Run one planned search. Returns (results, last_error)."""
     query, kind, rec = q["query"], q.get("source", "web"), q.get("recency", "any")
     limit = rec if rec in ("d", "w", "m", "y") else None

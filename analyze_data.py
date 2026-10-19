@@ -282,7 +282,9 @@ def _profile(df: pd.DataFrame, focus: str = "") -> dict:
         pairs = []
         for i in range(len(cols)):
             for j in range(i + 1, len(cols)):
-                r = float(corr.iloc[i, j])
+                # corr.iloc[i, j] can be a NumPy scalar; convert it to a plain Python float
+                # before passing into float() so static type checkers accept it.
+                r = float(np.asarray(corr.iloc[i, j]).item())
                 if not np.isnan(r) and abs(r) >= 0.4:
                     pairs.append({"a": str(cols[i]), "b": str(cols[j]), "r": _round(r, 2)})
         pairs.sort(key=lambda p: -abs(p["r"]))
