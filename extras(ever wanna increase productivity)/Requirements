@@ -1,0 +1,5 @@
+# Extra packages for the optional automations (install in the SERVER environment).
+# requests, fpdf2, pandas and the rest are already installed for the main project.
+python-dotenv>=1.0   # reads secrets from the .env file
+tzdata               # timezone data so calendar times are correct on Windows
+# Also needed on the machine (not pip): git, for repo_bootstrap and repos_sync.

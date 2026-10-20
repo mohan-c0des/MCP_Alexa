@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from pdf_utils import md_to_pdf
+from tools.pdf_utils import md_to_pdf
 
 # --- Config ------------------------------------------------------------------
 WORKSPACE = Path(os.environ.get("MCP_WORKSPACE", Path.home() / "AlexaWorkspace")).resolve()

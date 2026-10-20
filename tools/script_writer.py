@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from analyze_data import WORKSPACE, _gemini_text
+from tools.analyze_data import WORKSPACE, _gemini_text
 
 SCRIPTS = WORKSPACE / "scripts"
 SCRIPTS.mkdir(parents=True, exist_ok=True)

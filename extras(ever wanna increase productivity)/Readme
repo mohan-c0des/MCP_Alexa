@@ -1,0 +1,116 @@
+# Extras: optional automations
+
+Off by default. Turn them on only if you want Alexa to run git, calendar, notes, messaging or
+web-data chores. **No other file in the project needs to change** (`analyze_data.py`,
+`script_writer.py`, `instructions.py`, `agent.py` stay exactly as they are). The only edit is a few
+lines in `server.py`.
+
+## What it adds
+
+| Automation | What it does | Needs |
+|---|---|---|
+| `repo_bootstrap` | New project: folder, starter files, MIT license, `git init`, first commit, GitHub repo, push | `GITHUB_TOKEN`, git |
+| `repos_sync` | Check every repo in your projects folder, fast-forward pull clean ones, optional push | git |
+| `events_to_ics` | Deadlines / exam lists (file or text) -> calendar `.ics` file | `GEMINI_API_KEY` |
+| `codeforces_contests` | Upcoming Codeforces contests -> calendar `.ics` file | nothing |
+| `notes_compile` | Merge a day's notes into one master review file (+ AI summary, optional PDF) | nothing |
+| `notify` | Send a message to Discord or Telegram | webhook / bot token |
+| `weather_snapshot`, `api_snapshot` | Save weather or public API data as JSON | nothing |
+
+Anything that changes things outside your laptop (creating repos, pulling or pushing code) needs an
+approval: the first call only previews and returns a token, and the second call must repeat the same
+parameters with that token. Secrets stay in `.env` and are never shown to the model.
+
+## Folder layout
+
+```
+MCP_Alexa+/
+  server.py            <- edit a few lines (step 3)
+  analyze_data.py ...  <- unchanged
+  .env                 <- your secrets (add to .gitignore!)
+  extras/
+    __init__.py        <- empty file
+    automations.py
+    automations_cli.py
+    requirements.txt
+    README.md
+```
+
+## Setup
+
+**1. Install** (server environment):
+```bash
+pip install -r extras/requirements.txt
+```
+Git must be installed, and set your identity once:
+`git config --global user.name "Your Name"` and `git config --global user.email you@example.com`
+
+**2. Create `.env`** next to `server.py` (only fill in what you use):
+```
+GEMINI_API_KEY=...
+GITHUB_TOKEN=...            # classic personal access token with "repo" scope
+DISCORD_WEBHOOK_URL=...     # Discord channel > Edit > Integrations > Webhooks
+TELEGRAM_BOT_TOKEN=...      # create a bot with @BotFather
+TELEGRAM_CHAT_ID=...        # your chat id
+DEV_ROOT=C:\Users\you\Projects   # where repo_bootstrap/repos_sync work (default: ~/Projects)
+USER_TZ=Asia/Kolkata             # for calendar times
+```
+Add `.env` to `.gitignore`. Never commit it.
+
+**3. Edit `server.py`.** Put the first block at the very top, above your other imports, and
+use `instructions` in your existing `FastMCP(...)` line:
+```python
+import os
+from dotenv import load_dotenv
+load_dotenv()                                  # reads .env next to server.py
+
+# ... your existing imports ...
+
+EXTRAS = os.environ.get("ENABLE_EXTRAS") == "1"
+instructions = SERVER_INSTRUCTIONS
+if EXTRAS:
+    from extras.automations import EXTRA_INSTRUCTIONS, list_automations, run_automation
+    instructions += EXTRA_INSTRUCTIONS
+
+mcp = FastMCP("laptop-assistant", instructions=instructions)   # was: instructions=SERVER_INSTRUCTIONS
+
+# ... your existing mcp.tool()(...) lines ...
+if EXTRAS:
+    mcp.tool()(list_automations)
+    mcp.tool()(run_automation)
+```
+
+**4. Switch it on:** add `ENABLE_EXTRAS=1` to `.env`. Remove it to switch the extras off again.
+
+**5. Restart `server.py` and `agent.py`.** The agent reads the server's instructions when it connects,
+so it learns about the extras automatically.
+
+## Try it
+
+- "What can you automate?"
+- "Create a new Python project called demo-app on GitHub" (asks for approval first)
+- "Check all my repositories and update the ones that are behind"
+- "Make a calendar file with the upcoming Codeforces contests"
+- "Turn deadlines.txt into a calendar file"
+- "Merge today's notes into a daily review"
+- "Get the weather forecast for Vijayawada"
+
+## Scheduling ("every morning")
+
+Run one automation from the command line, for example from Windows Task Scheduler:
+```bash
+python extras/automations_cli.py weather_snapshot city=Vijayawada days=3
+python extras/automations_cli.py notes_compile folder=notes pdf=true --notify
+python extras/automations_cli.py repos_sync --yes      # anything that changes things needs --yes
+```
+Use the `python.exe` from your server environment. Secrets come from `.env`, so the scheduled run
+needs no terminal variables.
+
+## Notes
+
+- Tested locally: the approval gate, git bootstrap and push (to a local stand-in for GitHub), repo sync,
+  `.ics` files, note merging, and the blocking of bad paths and hosts.
+- Not tested against the live services: GitHub's API, Discord, Telegram, Open-Meteo, Codeforces.
+- `api_snapshot` only talks to allow-listed hosts. Add more with `API_ALLOWLIST=host1,host2` in `.env`.
+- Calendar output is an `.ics` file (import it in Google Calendar: Settings > Import & export). Writing
+  straight into Google Calendar needs the Google Calendar API and OAuth, which is not included.

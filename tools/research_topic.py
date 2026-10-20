@@ -18,8 +18,8 @@ from typing import Any
 import pandas as pd
 from ddgs import DDGS
 
-from analyze_data import MAX_TEXT_CHARS, REPORTS, _gemini_json, analyze_data
-from pdf_utils import md_to_pdf
+from tools.analyze_data import MAX_TEXT_CHARS, REPORTS, _gemini_json, analyze_data
+from tools.pdf_utils import md_to_pdf
 
 MIN_QUERIES, MAX_QUERIES = 3, 8
 RESULTS_PER_QUERY = 6
