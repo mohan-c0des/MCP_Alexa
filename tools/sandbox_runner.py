@@ -4,6 +4,7 @@ Usage:  python sandbox_runner.py <script.py>      (env: SANDBOX_WORKSPACE=<folde
 
 Guards (a Python audit hook, so they also catch tricks the static check misses):
   - writes, deletes, renames and moves are only allowed INSIDE the workspace folder
+    (except its scripts/ and .undo/ folders, which are read-only for scripts)
   - no network, no subprocesses, no shell commands
   - reading well-known secret locations (.ssh, .aws, .env, ...) is blocked
 This is defence in depth for a hackathon demo, not a perfect jail.
@@ -14,6 +15,7 @@ import sys
 from pathlib import Path
 
 WORKSPACE = os.path.normcase(os.path.realpath(os.environ["SANDBOX_WORKSPACE"]))
+PROTECTED_SUBDIRS = {"scripts", ".undo"}  # the approved scripts and the undo backups
 SECRET_DIRS = {".ssh", ".aws", ".gnupg", ".kube", ".azure"}
 SECRET_FILES = {"credentials", "id_rsa", "id_ed25519", "login data", "cookies"}
 
@@ -41,6 +43,15 @@ def _inside(p) -> bool:
     return n == WORKSPACE or n.startswith(WORKSPACE + os.sep)
 
 
+def _writable(p) -> bool:
+    """Inside the workspace, and not in one of its protected sub-folders."""
+    n = _norm(p)
+    if not (n == WORKSPACE or n.startswith(WORKSPACE + os.sep)):
+        return False
+    rel = n[len(WORKSPACE):].lstrip(os.sep)
+    return not rel or rel.split(os.sep)[0] not in PROTECTED_SUBDIRS
+
+
 def _secret(p) -> bool:
     n = _norm(p)
     parts = {x.lower() for x in Path(n).parts}
@@ -59,14 +70,14 @@ def _hook(event: str, args: tuple) -> None:
         if isinstance(path, int):
             return
         writing = any(c in str(mode or "") for c in "wax+") or (isinstance(flags, int) and flags & WRITE_FLAGS)
-        if writing and not _inside(path):
-            _deny(f"writing outside the workspace ({os.fsdecode(path)})")
+        if writing and not _writable(path):
+            _deny(f"writing outside the workspace or into a protected folder ({os.fsdecode(path)})")
         if not writing and _secret(path):
             _deny(f"reading a protected location ({os.fsdecode(path)})")
     elif event in PATH_ARGS:
         for i in PATH_ARGS[event]:
-            if i < len(args) and isinstance(args[i], (str, bytes, os.PathLike)) and not _inside(args[i]):
-                _deny(f"{event} outside the workspace ({os.fsdecode(args[i])})")
+            if i < len(args) and isinstance(args[i], (str, bytes, os.PathLike)) and not _writable(args[i]):
+                _deny(f"{event} outside the workspace or into a protected folder ({os.fsdecode(args[i])})")
 
 
 if __name__ == "__main__":

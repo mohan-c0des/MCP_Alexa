@@ -5,7 +5,7 @@ from instructions import SERVER_INSTRUCTIONS
 from tools.screen_control import ask_about_screen, interact_with_screen
 from tools.research_topic import research_topic
 from tools.analyze_data import analyze_data
-from tools.script_writer import write_script, run_script
+from tools.script_writer import undo_last_script, write_script, run_script
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,6 +18,8 @@ mcp.tool()(analyze_data)
 
 mcp.tool()(write_script)
 mcp.tool()(run_script)
+mcp.tool()(undo_last_script)
+
 mcp.tool()(ask_about_screen)
 mcp.tool()(interact_with_screen)
 
