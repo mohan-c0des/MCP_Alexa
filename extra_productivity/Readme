@@ -11,7 +11,7 @@ lines in `server.py`.
 |---|---|---|
 | `repo_bootstrap` | New project: folder, starter files, MIT license, `git init`, first commit, GitHub repo, push | `GITHUB_TOKEN`, git |
 | `repos_sync` | Check every repo in your projects folder, fast-forward pull clean ones, optional push | git |
-| `events_to_ics` | Deadlines / exam lists (file or text) -> calendar `.ics` file | `GEMINI_API_KEY` |
+| `events_to_ics` | Deadlines / exam lists (file or text) -> calendar `.ics` file | `GOOGLE_API_KEY` |
 | `codeforces_contests` | Upcoming Codeforces contests -> calendar `.ics` file | nothing |
 | `notes_compile` | Merge a day's notes into one master review file (+ AI summary, optional PDF) | nothing |
 | `notify` | Send a message to Discord or Telegram | webhook / bot token |
@@ -47,7 +47,7 @@ Git must be installed, and set your identity once:
 
 **2. Create `.env`** next to `server.py` (only fill in what you use):
 ```
-GEMINI_API_KEY=...
+GOOGLE_API_KEY=...
 GITHUB_TOKEN=...            # classic personal access token with "repo" scope
 DISCORD_WEBHOOK_URL=...     # Discord channel > Edit > Integrations > Webhooks
 TELEGRAM_BOT_TOKEN=...      # create a bot with @BotFather
