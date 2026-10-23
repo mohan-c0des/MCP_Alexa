@@ -1,28 +1,23 @@
-# --- Python Backend ---
-__pycache__/
-*.py[cod]
-*$py.class
-*/venv/
-*/.venv/
-venv/
+# Virtual environments (root and subfolders)
 .venv/
-.env
-*.env
-*.log
+.venv*/
+venv/
+**/venv/
+**/.venv/
 
-# --- Node / React Frontend ---
+# Node modules (React frontend)
 node_modules/
-*/node_modules/
+**/node_modules/
 dist/
-dist-ssr/
-*.local
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+**/dist/
 
-# --- Editor & OS artifacts ---
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Secrets & Environment variables
+.env
+**/.env
+.env.local
+
+# Python cache & logs
+__pycache__/
+**/__pycache__/
+*.pyc
+AlexaWorkspace/
