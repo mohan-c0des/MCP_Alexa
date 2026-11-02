@@ -53,16 +53,16 @@ Alexa+ can order groceries and book rides, but it cannot look at your screen, fi
 * **Privacy:** Screenshots and files you ask it to analyze are sent to the Google Gemini API.
 
 ---
-
-## Requirements
+# Test Instructions:
+## Test Requirements
 
 * **Python 3.11+** and a **Gemini API key** (free at [Google AI Studio](https://aistudio.google.com/apikey)).
-* **Windows 10/11** is the tested platform (window detection and chat-window hiding use the Windows API). The rest works on macOS and Linux (screen actions require a normal desktop session).
-* **Node.js 18+** for the web app (optional; the terminal agent needs no Node).
+* **Windows 10/11** is the tested platform (window detection and chat-window hiding use the Windows API). The rest works on macOS and Linux (screen actions require a normal desktop session). Just test it on your mac/Linux to know if everything works fine.
+* **Node.js 18+** if the client is web app (optional; the terminal agent needs no Node).
 
 ---
 
-## ⚙️ Setup
+## Setup
 
 The server and the client require **two separate Python environments** because their MCP package versions conflict.
 
@@ -132,6 +132,7 @@ npx @modelcontextprotocol/inspector     # connect to http://127.0.0.1:8000/mcp (
     and more...play around with it.
     **With extra_productivity(folder) tools enabled, You can expect more automated skills.
     Its Disabled by default to reduce set-up time. To switch that on, go through readme in extra_productivity folder.**
+    
 ## ⚙️ Settings (`.env`)
 
 | Variable | Default | Meaning |
