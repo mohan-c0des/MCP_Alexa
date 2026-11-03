@@ -21,7 +21,20 @@ Alexa+ can order groceries and book rides, but it cannot look at your screen, fi
 
 ---
 
-## How it fits together
+## How it connects to a real Alexa+ device (design)
+→Alexa+ runs in Amazon's cloud, and a laptop sits behind a home router, so Alexa can't reach it directly.
+
+**Our design:**
+* The user installs a small companion app on the laptop and signs in with their Amazon account.
+* The companion opens an outbound, authenticated TLS connection to a relay in the cloud, so no ports are opened on the laptop.
+* Our MCP server is registered as an Alexa+ add-on pointing at the relay's HTTPS MCP endpoint, protected by OAuth account linking.
+* When the user says "Alexa, fix the error on my screen", Alexa+'s own model picks our tool and calls it over MCP Streamable HTTP. The relay forwards the call to the local server, which runs the tool and returns the result.
+* Alexa speaks the 4–5 sentence spoken_summary. PDFs, code diffs, and approval cards appear on an Echo Show or the laptop, and risky actions still need a spoken yes.
+
+**→Built today:** the MCP server, which is the part that doesn't change, and a simulated Alexa+ client.
+**→Not built:** the companion relay, add-on registration, and OAuth, which need Alexa developer access and a cloud service. Amazon's add-on guidance also expects fast responses (about 500 ms), so slower tools like screen vision and research would need a quick spoken acknowledgement while the result is prepared.
+
+### How it fits together
 
 ```text
  Web app (client/Simulated_frontend) --HTTP--> FastAPI backend (client/Simulated_backend/main.py) --+
